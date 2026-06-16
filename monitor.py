@@ -475,7 +475,8 @@ def post_missing_parts_to_board(on_site_jobs: list[dict], ran_at: dt.datetime) -
 def _board_job(j: dict) -> dict:
     states = j["_line_states"]
     pos = sorted({s.get("po_number", "") for s in states if s.get("po_number")})
-    etas = sorted({s.get("eta", "") for s in states if s.get("eta")})
+    etas = sorted({s.get("eta", "") for s in states
+                   if s.get("eta") and not str(s.get("eta")).startswith("0001")})
     return {
         "jobsheet": j["number"],
         "reg": j.get("vehicleRegistrationNo") or "",
