@@ -1,0 +1,48 @@
+name: Missing Parts Monitor
+
+# Runs the missing-parts check on a schedule, in the cloud, with no Mac and no
+# Claude in the loop. Times are UTC (GitHub cron is always UTC), so this covers
+# roughly 07:00-18:00 UK time across the year, Mon-Sat.
+on:
+  schedule:
+    - cron: "0 6-17 * * 1-6"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (read-only: no BC writes, no Teams post)"
+        type: boolean
+        default: false
+
+# Prevent two runs overlapping if one is slow.
+concurrency:
+  group: missing-parts-monitor
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run missing-parts monitor
+        env:
+          BC_TENANT_ID: ${{ secrets.BC_TENANT_ID }}
+          BC_CLIENT_ID: ${{ secrets.BC_CLIENT_ID }}
+          BC_CLIENT_SECRET: ${{ secrets.BC_CLIENT_SECRET }}
+          BOARD_URL: ${{ secrets.BOARD_URL }}
+          BOARD_API_KEY: ${{ secrets.BOARD_API_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "Running in DRY-RUN mode (no writes, no Teams post)"
+            python monitor.py --dry-run --no-teams
+          else
+            python monitor.py
+          fi
