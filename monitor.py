@@ -359,11 +359,37 @@ def determine_line_state(
     item_no = line["No"]
     needed = float(line.get("Quantity") or 0)
 
-    # Placeholder items (MISC, FILT, etc.): no real SKU, so they can have
-    # neither shelf stock nor PO coverage. Always missing → NO_PO.
+    # Placeholder items (MISC, FILT, MISCD, etc.): no real SKU, so they can't
+    # have shelf stock or match GENERAL open POs by item code. BUT a placeholder
+    # line can still carry its own special-order PO (Special_Order_Purchase_No) —
+    # the advisor raised a PO for it even though it's coded generically. Check
+    # that first; only flag NO_PO when there is genuinely no special-order PO.
     if item_no in PLACEHOLDER_ITEMS:
+        sopo = (line.get("Special_Order_Purchase_No") or "").strip()
+        if sopo:
+            key = (sopo, item_no)
+            if key not in specific_po_cache:
+                specific_po_cache[key] = fetch_specific_po_line(bc, sopo, item_no)
+            po_line = specific_po_cache[key]
+            if po_line:
+                rq = float(po_line["receiveQuantity"] or 0)
+                if rq <= 0:
+                    return {"state": S_CLEAR, "po_number": po_line["po_number"],
+                            "reason": "placeholder special PO fully received",
+                            "is_placeholder": True}
+                if rq >= needed:
+                    return {"state": S_ON_ORDER, "eta": po_line["expectedReceiptDate"],
+                            "po_number": po_line["po_number"],
+                            "reason": "placeholder on special-order PO",
+                            "is_placeholder": True}
+                return {"state": S_PARTIAL, "shortfall": needed - rq,
+                        "eta": po_line["expectedReceiptDate"],
+                        "po_number": po_line["po_number"],
+                        "reason": f"placeholder special PO covers {rq}/{needed}",
+                        "is_placeholder": True}
         return {"state": S_NO_PO, "shortfall": needed,
-                "reason": "placeholder item", "is_placeholder": True}
+                "reason": "placeholder item, no special-order PO",
+                "is_placeholder": True}
 
     # --- Shelf-stock test FIRST (the primary "not missing" rule) ----------
     # Per Neil 2026-06-02: a coded part is only NOT missing if we physically
