@@ -4,12 +4,10 @@ name: Missing Parts Monitor
 # Claude in the loop. Times are UTC (GitHub cron is always UTC), so this covers
 # roughly 07:00-18:00 UK time across the year, Mon-Sat.
 on:
-  schedule:
-    # Every 15 min, 08:00–18:00 UK time, Mon–Fri. GitHub cron runs in UTC, so
-    # this is pinned to BST (summer). At the autumn clock change, bump both
-    # hour ranges by +1 to keep the 8am–6pm window.
-    - cron: "*/15 7-16 * * 1-5"
-    - cron: "0 17 * * 1-5"
+  # Triggered every 15 min (08:00–18:00 UK, Mon–Fri) by the Cloudflare Worker
+  # "missing-parts-trigger" via workflow_dispatch. GitHub's own `schedule` was
+  # unreliable (runs were silently dropped), so Cloudflare cron pulls the
+  # trigger instead — see ../missing-parts-trigger/.
   workflow_dispatch:
     inputs:
       dry_run:

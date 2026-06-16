@@ -89,9 +89,11 @@ scheduled task so the work isn't done twice.
 
 ## Good to know
 
-- **Schedule:** every 15 minutes, ~09:00–16:00 UK, Mon–Fri (the `cron` lines in
-  `.github/workflows/missing-parts.yml`). GitHub cron is UTC, so it's pinned to
-  the summer clock — bump the hour ranges by +1 at the autumn clock change.
+- **Schedule:** every 15 minutes, ~08:00–18:00 UK, Mon–Fri — driven by the
+  Cloudflare Worker `missing-parts-trigger` (cron in its `wrangler.toml`), which
+  calls this workflow via `workflow_dispatch`. GitHub's built-in `schedule` was
+  unreliable, so Cloudflare's cron pulls the trigger. Cloudflare cron is UTC, so
+  bump the hour ranges by +1 at the autumn clock change.
 - **Self-clearing:** the job sends the full current picture every run, so a job
   whose parts arrive simply disappears from the page next run. Comments are
   preserved for jobs that are still waiting.
