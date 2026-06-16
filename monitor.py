@@ -486,8 +486,33 @@ def _board_job(j: dict) -> dict:
         "parts": _missing_parts_label(j),
         "po_numbers": ", ".join(pos),
         "system_eta": etas[0] if etas else "",
+        "lines": _board_lines(j),
         "newly_flagged": bool(j.get("_newly_flagged")),
     }
+
+
+def _board_lines(j: dict) -> list[dict]:
+    """Per-line detail so a mixed job (some lines on order, one with no PO) is
+    legible on the board instead of collapsing to a single status + PO."""
+    out, seen = [], set()
+    missing = [x for x in j["_line_states"] if x["state"] != S_CLEAR]
+    for s in sorted(missing, key=lambda x: (-WORST_ORDER.get(x["state"], 0), x["item_no"])):
+        try:
+            q = float(s.get("needed"))
+            qty = str(int(q)) if q == int(q) else f"{q:g}"
+        except (TypeError, ValueError):
+            qty = str(s.get("needed"))
+        desc = (s.get("description") or "").strip() or s["item_no"]
+        key = (desc, qty, s["state"])
+        if key in seen:
+            continue
+        seen.add(key)
+        eta = s.get("eta") or ""
+        if str(eta).startswith("0001"):
+            eta = ""
+        out.append({"desc": desc, "qty": qty, "state": s["state"],
+                    "po": s.get("po_number") or "", "eta": eta})
+    return out
 
 
 def _missing_parts_label(j: dict) -> str:
