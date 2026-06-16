@@ -244,6 +244,32 @@ def fetch_inventory(bc: BCClient, item_codes: list[str]) -> dict[str, float]:
     return inv
 
 
+def fetch_noninventory_codes(bc: BCClient, item_codes: list[str]) -> set[str]:
+    """Return item codes whose BC item Type is not 'Inventory' (Service or
+    Non-Inventory) — warranty contributions, fees and charges that aren't
+    physical stock and must never be flagged as a missing part."""
+    skip: set[str] = set()
+    if not item_codes:
+        return skip
+    codes = list(set(item_codes))
+    BATCH = 20
+    for i in range(0, len(codes), BATCH):
+        chunk = codes[i : i + BATCH]
+        flt = " or ".join(f"number eq '{c}'" for c in chunk)
+        try:
+            r = http_get(
+                bc, v2_url(bc, "items"),
+                params={"$filter": flt, "$select": "number,type", "$top": "100"},
+            )
+        except requests.HTTPError:
+            continue
+        for it in r.get("value", []):
+            t = str(it.get("type") or "")
+            if t and t != "Inventory":
+                skip.add(it["number"])
+    return skip
+
+
 def fetch_open_po_lines_by_items(
     bc: BCClient, item_codes: list[str]
 ) -> dict[str, list[dict]]:
@@ -536,7 +562,7 @@ def _board_lines(j: dict) -> list[dict]:
         eta = s.get("eta") or ""
         if str(eta).startswith("0001"):
             eta = ""
-        out.append({"desc": desc, "qty": qty, "state": s["state"],
+        out.append({"no": s["item_no"], "desc": desc, "qty": qty, "state": s["state"],
                     "po": s.get("po_number") or "", "eta": eta})
     return out
 
@@ -595,8 +621,15 @@ def main() -> int:
     # Step 2 — fetch all Item lines on these jobsheets
     all_lines_raw = fetch_item_lines(bc, numbers)
 
+    # Non-inventory / service items (warranty contributions, fees, charges) are
+    # not physical parts and must never show as missing — skip by BC item Type.
+    _real_codes = sorted({L["No"] for L in all_lines_raw if L["No"] not in PLACEHOLDER_ITEMS})
+    noninv_codes = fetch_noninventory_codes(bc, _real_codes)
+
     def _is_excluded(L: dict) -> bool:
-        return L["No"] in EXCLUDED_ITEMS or is_engine_oil(L.get("Description"))
+        return (L["No"] in EXCLUDED_ITEMS
+                or L["No"] in noninv_codes
+                or is_engine_oil(L.get("Description")))
 
     excluded_count = sum(1 for L in all_lines_raw if _is_excluded(L))
     all_lines = [L for L in all_lines_raw if not _is_excluded(L)]
