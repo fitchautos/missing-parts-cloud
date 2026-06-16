@@ -5,7 +5,11 @@ name: Missing Parts Monitor
 # roughly 07:00-18:00 UK time across the year, Mon-Sat.
 on:
   schedule:
-    - cron: "0 6-17 * * 1-6"
+    # Every 15 min, 09:00–16:00 UK time, Mon–Fri. GitHub cron runs in UTC, so
+    # this is pinned to BST (summer). At the autumn clock change, bump both
+    # hour ranges by +1 (to 9-15 / 16) to keep the 9am–4pm window.
+    - cron: "*/15 8-14 * * 1-5"
+    - cron: "0 15 * * 1-5"
   workflow_dispatch:
     inputs:
       dry_run:

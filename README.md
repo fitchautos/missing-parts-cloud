@@ -89,8 +89,9 @@ scheduled task so the work isn't done twice.
 
 ## Good to know
 
-- **Schedule:** hourly, ~07:00–18:00 UK, Mon–Sat (the `cron` line in
-  `.github/workflows/missing-parts.yml`).
+- **Schedule:** every 15 minutes, ~09:00–16:00 UK, Mon–Fri (the `cron` lines in
+  `.github/workflows/missing-parts.yml`). GitHub cron is UTC, so it's pinned to
+  the summer clock — bump the hour ranges by +1 at the autumn clock change.
 - **Self-clearing:** the job sends the full current picture every run, so a job
   whose parts arrive simply disappears from the page next run. Comments are
   preserved for jobs that are still waiting.
