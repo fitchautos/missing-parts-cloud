@@ -369,6 +369,22 @@ def fetch_specific_po_line(
     }
 
 
+def is_open_po(bc: BCClient, po_number: str, cache: dict) -> bool:
+    """True if po_number is still an OPEN purchase order. A special-order PO that
+    has dropped off the open list has been fully received & posted — its parts
+    have arrived. On any error assume open (safer: never hide a part)."""
+    if po_number not in cache:
+        try:
+            pos = http_get(
+                bc, v2_url(bc, "purchaseOrders"),
+                params={"$filter": f"number eq '{po_number}'", "$select": "number"},
+            ).get("value", [])
+            cache[po_number] = bool(pos)
+        except requests.HTTPError:
+            cache[po_number] = True
+    return cache[po_number]
+
+
 # --- state determination ---------------------------------------------------
 def determine_line_state(
     line: dict,
@@ -376,6 +392,7 @@ def determine_line_state(
     in_scope_demand: dict[str, float],
     po_lines_by_item: dict[str, list[dict]],
     specific_po_cache: dict[tuple[str, str], dict | None],
+    open_po_cache: dict[str, bool],
     bc: BCClient,
 ) -> dict:
     """Return {state, eta?, shortfall?, po_number?, is_placeholder?} for a
@@ -413,6 +430,15 @@ def determine_line_state(
                         "po_number": po_line["po_number"],
                         "reason": f"placeholder special PO covers {rq}/{needed}",
                         "is_placeholder": True}
+            # No PO line matched by code. If the special-order PO has dropped off
+            # the open list it's been received & posted → the part has arrived.
+            if not is_open_po(bc, sopo, open_po_cache):
+                return {"state": S_CLEAR, "po_number": sopo,
+                        "reason": "special PO received & posted (closed)",
+                        "is_placeholder": True}
+            return {"state": S_ON_ORDER, "po_number": sopo,
+                    "reason": "on special-order PO (line code differs)",
+                    "is_placeholder": True}
         return {"state": S_NO_PO, "shortfall": needed,
                 "reason": "placeholder item, no special-order PO",
                 "is_placeholder": True}
@@ -459,7 +485,12 @@ def determine_line_state(
                         "eta": po_line["expectedReceiptDate"],
                         "po_number": po_line["po_number"],
                         "reason": f"special PO covers {rq}/{remaining_need}"}
-        # Fall through if the specific PO line couldn't be fetched.
+        # No PO line matched. If the special-order PO has dropped off the open
+        # list it's been received & posted → the part has arrived → CLEAR.
+        if not is_open_po(bc, sopo, open_po_cache):
+            return {"state": S_CLEAR, "po_number": sopo,
+                    "reason": "special PO received & posted (closed)"}
+        # PO still open but code didn't match a line — fall through to Tier 2.
 
     # Tier 2 — general open POs by item code.
     po_lines = po_lines_by_item.get(item_no, [])
@@ -659,11 +690,13 @@ def main() -> int:
 
     # Step 4 — determine state per line, roll up per jobsheet
     specific_po_cache: dict[tuple[str, str], dict | None] = {}
+    open_po_cache: dict[str, bool] = {}
     for j in jobs:
         line_states = []
         for L in lines_by_job.get(j["number"], []):
             st = determine_line_state(
-                L, inventory, in_scope_demand, po_lines_by_item, specific_po_cache, bc,
+                L, inventory, in_scope_demand, po_lines_by_item,
+                specific_po_cache, open_po_cache, bc,
             )
             st["item_no"] = L["No"]
             st["needed"] = L.get("Quantity")
